@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>colcon-ui</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1a1a; color: #c8c8c8; font-family: monospace; padding: 24px; }
+    .topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+    .title { font-size: 15px; font-weight: 500; color: #e0e0e0; flex: 1; }
+    .badge { font-size: 11px; padding: 4px 12px; border-radius: 99px; font-weight: 500; }
+    .badge-building { background: #3a2800; color: #EF9F27; border: 0.5px solid #BA7517; }
+    .badge-done { background: #0d2200; color: #97C459; border: 0.5px solid #3B6D11; }
+    .badge-failed { background: #2a0000; color: #F09595; border: 0.5px solid #A32D2D; }
+    .badge-idle { background: #222; color: #888; border: 0.5px solid #444; }
+    .btn { font-size: 12px; padding: 6px 14px; border-radius: 6px; border: 0.5px solid #444; background: #252525; color: #c8c8c8; cursor: pointer; font-family: monospace; }
+    .btn:hover { background: #2e2e2e; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .section { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .pkg-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+    .pkg { background: #222; border: 0.5px solid #333; border-radius: 6px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; }
+    .pkg.building { border-color: #BA7517; }
+    .pkg.done { border-color: #333; }
+    .pkg.failed { border-color: #A32D2D; }
+    .pkg.aborted { border-color: #534AB7; }
+    .pkg-name { font-size: 13px; font-weight: 500; color: #e0e0e0; flex: 1; }
+    .bar-wrap { width: 100px; }
+    .bar-bg { height: 3px; background: #333; border-radius: 99px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
+    .bar-building { background: #BA7517; width: 60%; }
+    .bar-done { background: #639922; width: 100%; }
+    .bar-failed { background: #A32D2D; width: 35%; }
+    .bar-aborted { background: #534AB7; width: 20%; }
+    .bar-wait { width: 0%; }
+    .pkg-status { font-size: 11px; min-width: 80px; text-align: right; }
+    .s-building { color: #EF9F27; }
+    .s-done { color: #97C459; }
+    .s-failed { color: #E24B4A; }
+    .s-aborted { color: #7F77DD; }
+    .error-box { background: #200000; border: 0.5px solid #5a1a1a; border-radius: 6px; padding: 12px 14px; margin-bottom: 20px; display: none; }
+    .error-title { font-size: 12px; color: #E24B4A; margin-bottom: 6px; }
+    .error-body { font-size: 11px; color: #c07070; line-height: 1.7; white-space: pre-wrap; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+    .stat { background: #222; border: 0.5px solid #333; border-radius: 6px; padding: 10px 14px; }
+    .stat-label { font-size: 10px; color: #555; margin-bottom: 4px; }
+    .stat-val { font-size: 22px; font-weight: 500; color: #e0e0e0; }
+    .stat-val.green { color: #639922; }
+    .stat-val.red { color: #E24B4A; }
+    .log { background: #111; border: 0.5px solid #2a2a2a; border-radius: 6px; padding: 12px 14px; font-size: 11px; line-height: 1.8; max-height: 140px; overflow-y: auto; }
+    .log-info { color: #378ADD; }
+    .log-ok { color: #639922; }
+    .log-err { color: #E24B4A; }
+    .log-raw { color: #555; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .pulsing { animation: pulse 1.2s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="title" id="ws-title">colcon-ui</span>
+    <span class="badge badge-idle" id="top-badge">idle</span>
+    <button class="btn" id="rebuild-btn" style="display:none">rebuild failed</button>
+    <button class="btn" id="build-btn">build</button>
+  </div>
+
+  <p class="section">packages</p>
+  <div class="pkg-list" id="pkg-list"></div>
+
+  <p class="section">last error</p>
+  <div class="error-box" id="error-box">
+    <div class="error-title" id="error-title"></div>
+    <div class="error-body" id="error-body"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-label">built</div><div class="stat-val green" id="s-built">0</div></div>
+    <div class="stat"><div class="stat-label">failed</div><div class="stat-val red" id="s-fail">0</div></div>
+    <div class="stat"><div class="stat-label">elapsed</div><div class="stat-val" id="s-time">0s</div></div>
+  </div>
+
+  <p class="section">live log</p>
+  <div class="log" id="log"></div>
+
+  <script>
+    const ws = new WebSocket("ws://localhost:8888/ws");
+    let packages = {};
+    let logLines = [];
+    let built = 0, failed = 0, elapsed = 0;
+    let elapsedTimer = null;
+
+    function resetUI() {
+      packages = {};
+      built = 0; failed = 0; elapsed = 0;
+      logLines = [];
+      document.getElementById("pkg-list").innerHTML = "";
+      document.getElementById("error-box").style.display = "none";
+      document.getElementById("s-built").textContent = "0";
+      document.getElementById("s-fail").textContent = "0";
+      document.getElementById("s-time").textContent = "0s";
+      document.getElementById("log").innerHTML = "";
+      document.getElementById("top-badge").textContent = "building";
+      document.getElementById("top-badge").className = "badge badge-building pulsing";
+      document.getElementById("build-btn").disabled = true;
+      document.getElementById("rebuild-btn").style.display = "none";
+    }
+
+    document.getElementById("build-btn").addEventListener("click", () => {
+      resetUI();
+      ws.send(JSON.stringify({ action: "build" }));
+    });
+
+    document.getElementById("rebuild-btn").addEventListener("click", () => {
+      const failedPkgs = Object.values(packages)
+        .filter(p => p.status === "failed" || p.status === "aborted")
+        .map(p => p.package);
+      if (failedPkgs.length === 0) return;
+      resetUI();
+      ws.send(JSON.stringify({ action: "build", packages: failedPkgs }));
+    });
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.status === "workspace") {
+        document.getElementById("ws-title").textContent = "colcon-ui / " + data.path.split("/").pop();
+        return;
+      }
+
+      if (data.status === "build_started") {
+        if (elapsedTimer) clearInterval(elapsedTimer);
+        elapsedTimer = setInterval(() => {
+          elapsed++;
+          document.getElementById("s-time").textContent = elapsed + "s";
+        }, 1000);
+        return;
+      }
+
+      if (data.status === "build_done") {
+        if (elapsedTimer) clearInterval(elapsedTimer);
+        document.getElementById("build-btn").disabled = false;
+        const hasFailed = Object.values(packages).some(p => p.status === "failed" || p.status === "aborted");
+        if (hasFailed) {
+          document.getElementById("rebuild-btn").style.display = "inline-block";
+        }
+        return;
+      }
+
+      if (data.status === "error_detail") {
+        document.getElementById("error-box").style.display = "block";
+        document.getElementById("error-title").textContent = "Build failed — " + data.package;
+        document.getElementById("error-body").textContent = data.error;
+        document.getElementById("top-badge").textContent = "failed";
+        document.getElementById("top-badge").className = "badge badge-failed";
+        return;
+      }
+
+      packages[data.package] = data;
+
+      if (data.status === "done") {
+        built++;
+        document.getElementById("s-built").textContent = built;
+        addLog("Finished <<< " + data.package + " [" + data.time + "]", "log-ok");
+      }
+      if (data.status === "building") {
+        addLog("Starting >>> " + data.package, "log-info");
+      }
+      if (data.status === "failed") {
+        failed++;
+        document.getElementById("s-fail").textContent = failed;
+        addLog("Failed <<< " + data.package, "log-err");
+        document.getElementById("top-badge").textContent = "failed";
+        document.getElementById("top-badge").className = "badge badge-failed";
+      }
+      if (data.status === "aborted") {
+        addLog("Aborted <<< " + data.package, "log-err");
+      }
+      if (Object.values(packages).length > 0 && Object.values(packages).every(p => p.status === "done")) {
+        document.getElementById("top-badge").textContent = "done";
+        document.getElementById("top-badge").className = "badge badge-done";
+        if (elapsedTimer) clearInterval(elapsedTimer);
+      }
+
+      renderPackages();
+    };
+
+    function addLog(text, cls) {
+      logLines.push(`<div class="${cls}">${text}</div>`);
+      if (logLines.length > 20) logLines.shift();
+      document.getElementById("log").innerHTML = logLines.join("");
+    }
+
+    function renderPackages() {
+      document.getElementById("pkg-list").innerHTML = Object.values(packages).map(p => `
+        <div class="pkg ${p.status}">
+          <div style="width:14px;height:14px;border-radius:3px;border:0.5px solid #444;flex-shrink:0"></div>
+          <span class="pkg-name">${p.package}</span>
+          <div class="bar-wrap"><div class="bar-bg"><div class="bar-fill bar-${p.status}"></div></div></div>
+          <span class="pkg-status s-${p.status}">${p.status === "done" ? "done " + p.time : p.status}</span>
+        </div>
+      `).join("");
+    }
+  </script>
+</body>
+</html>
