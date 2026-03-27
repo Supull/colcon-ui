@@ -66,7 +66,7 @@ colcon build → python parser → tornado websocket → browser
 - C++ compiler errors (type errors, missing symbols)
 - Clean builds with multiple packages in parallel
 
-## Roadmap
+## In the Future
 
 - [ ] Package selection checkboxes
 - [ ] Click package to view full log
