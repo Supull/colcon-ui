@@ -66,13 +66,6 @@ colcon build → python parser → tornado websocket → browser
 - C++ compiler errors (type errors, missing symbols)
 - Clean builds with multiple packages in parallel
 
-## In the Future
-
-- [ ] Package selection checkboxes
-- [ ] Click package to view full log
-- [ ] Build history
-- [ ] Desktop notifications
-
 ## Contributing
 
 PRs welcome. If you have a ROS2 workspace where colcon-ui doesn't parse errors correctly, open an issue with the raw colcon output and I'll add support for it.
