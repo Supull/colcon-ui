@@ -2,6 +2,9 @@
 
 A web dashboard for `colcon build` — replaces the wall of terminal text with a clean, live UI that shows per-package build status, extracts errors automatically, and lets you rebuild failed packages in one click.
 
+<img width="1465" height="670" alt="Screenshot 2026-03-26 at 6 33 38 PM" src="https://github.com/user-attachments/assets/4a65e232-0716-461d-b806-69936c4e9428" />
+
+
 ## Why
 
 Running `colcon build` on a ROS2 workspace gives you an unreadable stream of output. When something fails you have to scroll through hundreds of lines to find the error. colcon-ui fixes this.
